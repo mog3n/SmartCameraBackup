@@ -3,3 +3,4 @@ requests==2.22.0
 monotonic==1.5
 pysocks==1.7.1
 sseclient==0.0.22
+arlo==1.2.33
