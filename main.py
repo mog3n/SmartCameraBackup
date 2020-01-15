@@ -1,4 +1,4 @@
-import arlo_api.arlo as Arlo
+import arlo as Arlo
 import logging
 from datetime import timedelta, date, datetime
 import json
