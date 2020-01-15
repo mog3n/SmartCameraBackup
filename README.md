@@ -14,12 +14,12 @@ Installation will take 5-10 minutes. Please read the instructions very carefully
 
 ##Installation
 
-####Step 1: Cloning
+###Step 1: Cloning
 ```
 git clone https://github.com/mog3n/SecurityCameraBackup
 cd SecurityCameraBackup
 ```
-####Step 2: Activating a virtual python environment
+###Step 2: Activating a virtual python environment
 ```
 python3 -m venv $PWD/venv
 source $PWD/venv/bin/activate
@@ -35,14 +35,14 @@ you'll be prompted with a `client id` and `client secret`.
 
 Once you have everything setup, you'll want to write down the `client id` and `client secret`.
 
-####Step 4: Configurating the app
+###Step 4: Configurating the app
 Under the file `credentials_example.py`, you'll want to fill in the `CLIENT_ID` and `CLIENT_SECRET` variables with the one you were given in Step 3.
 
 Additionally, fill in your Arlo's account info: `ARLO_USERNAME` and `ARLO_PASSWORD`.
 
 Then **rename** the file to credentials.py
 
-####Step 5: Starting Backup
+###Step 5: Starting Backup
 ```
 python main.py
 ```
