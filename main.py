@@ -16,7 +16,7 @@ from credentials import *
 app = Flask(__name__)
 G_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 REDIRECT_URI = "http://localhost:42069/auth"
-SCOPE = "https://www.googleapis.com/auth/photoslibrary.appendonly"
+SCOPE = "https://www.googleapis.com/auth/photoslibrary"
 
 logging.basicConfig(level=logging.INFO)  # set default logger
 
@@ -52,7 +52,7 @@ class SmartCameraBackup(threading.Thread):
 
                     # if the video is already downloaded, then ignore it
                     if video_file_name in self.database['downloaded']:
-                        logging.info(video_file_name + " already downloaded")
+                        logging.debug(video_file_name + " already downloaded")
                         continue
 
                     # Download video
@@ -64,21 +64,14 @@ class SmartCameraBackup(threading.Thread):
                     logging.info('Downloaded video ' + video_file_name + ' from ' + recording['createdDate'] + '.')
                     # Add to database
                     self.database['downloaded'].append(video_file_name)
-                    self.save_database()
+                    # Save to file
+                    save_database(self.database)
 
                 logging.info("Done downloading all footage")
                 time.sleep(60)
 
             except Exception as e:
                 logging.error(e)
-
-    # Save the database variable to a file
-    def save_database(self):
-        db_file_path = os.path.join(os.getcwd(), "data.json")
-        file = io.open(db_file_path, 'w', encoding='utf-8')
-        file.write(json.dumps(self.database))
-        file.close()
-        logging.debug("Database saved.")
 
 
 # Creates a video folder if it doesn't exist
@@ -99,12 +92,84 @@ class GooglePhotosBackup(threading.Thread):
         self.database = database
 
     def run(self):
-        # get all files in the directory
+        access_token = self.database['g_token']
+
+        # TEST TOKEN WORKS
+        # r = requests.get('https://photoslibrary.googleapis.com/v1/albums?access_token='+access_token)
+        # resp = r.json()
+        # print(resp)
+
         while True:
+            # Get files in directory
             video_files = glob.glob(os.path.join(os.getcwd(), 'video', '*.mp4'))
+            for video_file in video_files:
+                # Grab the file name without the path
+                filename = os.path.basename(video_file)
+
+                # Check that video hasn't been uploaded
+                if filename in self.database['uploaded']:
+                    # Skip this file
+                    logging.debug(filename + " already uploaded")
+                    continue
+
+                # Upload File
+                headers = {'Content-type': 'application/octet-stream',
+                           'X-Goog-Upload-File-Name': filename,
+                           'X-Goog-Upload-Protocol': 'raw',
+                           'Authorization': 'Bearer '+access_token
+                           }
+                data = open(video_file, 'rb').read()
+                upload_video_url = "https://photoslibrary.googleapis.com/v1/uploads"
+                r = requests.post(
+                    url=upload_video_url,
+                    data=data,
+                    headers=headers,
+                )
+                upload_token = r.content.decode('UTF-8')  # Used to create a media item
+
+                # create media item
+                create_media_url = "https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate"
+                headers = {
+                    'Content-type': 'application/json',
+                    'Authorization': 'Bearer '+access_token,
+                }
+                data = {
+                    "newMediaItems": [
+                        {
+                            "description": "Uploaded using SmartCameraBackup by @mog3n on GitHub :)",
+                            "simpleMediaItem": {
+                                "uploadToken": upload_token
+                            }
+                        }
+                    ]
+                }
+                m = requests.post(create_media_url,
+                                  data=json.dumps(data),
+                                  headers=headers,
+                                  )
+                # Check for upload error
+                create_media_response = m.json()
+                if create_media_response['error']:
+                    logging.info("Error while trying to create media")
+                    logging.info(create_media_response)
+
+                logging.info(filename + " uploaded")
+                # Add to database
+                self.database['uploaded'].append(filename)
+                # Save database
+                save_database(self.database)
+
             # Finished uploading. Wait 1 minute
-            # logging.info("Done uploading to Google Photos")
+            logging.info("Done uploading to Google Photos")
             time.sleep(5)
+
+
+def save_database(db):
+    db_file_path = os.path.join(os.getcwd(), "data.json")
+    file = io.open(db_file_path, 'w', encoding='utf-8')
+    file.write(json.dumps(db))
+    file.close()
+    logging.debug("Database saved.")
 
 
 # Gets the "database" file that keeps a record of all downloaded and uploaded video files
@@ -133,7 +198,10 @@ def auth():
         logging.error(error)
 
     code = request.args.get('code', '')
+    if code == None:
+        logging.error('No code obtained.')
 
+    # Make request for access token
     r = requests.post('https://oauth2.googleapis.com/token',
                       {
                           'code': code,
@@ -176,7 +244,7 @@ def start_backup():
 
 
 def main():
-    # Open web browser for Google Photos API
+    # Open web browser to authenticate Google Photos API
     url = G_URL + "?client_id=" + CLIENT_ID + "&redirect_uri="+REDIRECT_URI+"&scope="+SCOPE+"&response_type=code"
     webbrowser.open(url, new=2)
     app.run(port=42069)
