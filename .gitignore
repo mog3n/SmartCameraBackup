@@ -1,6 +1,5 @@
 venv
 .idea
-
 video
 data.json
 credentials.py

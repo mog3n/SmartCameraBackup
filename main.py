@@ -28,7 +28,7 @@ class SmartCameraBackup(threading.Thread):
         self.database = database
 
         self.arlo = Arlo.Arlo(ARLO_USERNAME, ARLO_PASSWORD)
-        logging.info("Logged in as " + ARLO_USERNAME)
+        logging.info("[SmartCameraBackup] Logged in as " + ARLO_USERNAME)
 
     def run(self):
         while True:
@@ -41,7 +41,7 @@ class SmartCameraBackup(threading.Thread):
                 seven_days_ago = (date.today() - timedelta(days=7)).strftime("%Y%m%d")
 
                 library = arlo.GetLibrary(seven_days_ago, today)
-                logging.info("Library obtained")
+                # logging.info("Library obtained")
 
                 for recording in library:
                     # Get video as a chunked stream; this function returns a generator.
@@ -61,7 +61,7 @@ class SmartCameraBackup(threading.Thread):
                             f.write(chunk)
                         f.close()
 
-                    logging.info('Downloaded video ' + video_file_name + ' from ' + recording['createdDate'] + '.')
+                    logging.info('[SmartCameraBackup] Downloaded video ' + video_file_name + ' from ' + recording['createdDate'] + '.')
                     # Add to database
                     self.database['downloaded'].append(video_file_name)
                     # Save to file
@@ -80,7 +80,7 @@ def setup_video_folder():
     path = os.path.join(os.getcwd(), 'video')
     if not os.path.isdir(path):
         os.mkdir(path)
-        logging.info("Video path created")
+        logging.info("[setup_video_folder] Video path created")
     return path
 
 
@@ -127,7 +127,7 @@ class GooglePhotosBackup(threading.Thread):
                     data=data,
                     headers=headers,
                 )
-
+                logging.debug(r.content)
                 upload_token = r.content.decode('UTF-8')  # Used to create a media item
 
                 # create media item
@@ -156,8 +156,8 @@ class GooglePhotosBackup(threading.Thread):
                     logging.error("Error while trying to create media")
                     logging.info(create_media_response)
                     return
-
-                logging.info(filename + " uploaded")
+                logging.debug(m.json())
+                logging.info("[GooglePhotosBackup] "+filename + " uploaded")
                 # Add to database
                 self.database['uploaded'].append(filename)
                 # Save database
@@ -175,7 +175,7 @@ class Status(threading.Thread):
 
     def run(self):
         while True:
-            logging.info("STATUS | Uploaded: " + str(len(self.database['uploaded'])) +
+            logging.info("[Status] Uploaded: " + str(len(self.database['uploaded'])) +
                          " | Downloaded: " + str(len(self.database['downloaded'])))
             time.sleep(10)
 
@@ -196,13 +196,13 @@ def get_database():
     if os.path.exists(db_file_path):
         file = io.open(db_file_path, 'r', encoding='utf-8')
         database = json.loads(file.read())
-        logging.info("Database file loaded")
+        logging.info("[get_database] Database file loaded")
         file.close()
     else:
         # Writes the database dict to file
         file = io.open(db_file_path, 'w', encoding='utf-8')
         file.write(json.dumps(database))
-        logging.info("No file loaded: Creating one in memory")
+        logging.info("[get_database] No file loaded: Creating one in memory")
         file.close()
     return database
 
@@ -230,9 +230,8 @@ def auth():
 
     token = r.json()['access_token']
     refresh_token = r.json()['refresh_token']
-    logging.info('Token:'+token)
+    logging.debug('Access Token:'+token)
     save_access_token(token, refresh_token)
-    logging.info("G Token obtained: " + token)
     # If all is good, then start backup.
     start_backup()
     return Response("{'message': 'Successfully logged into Google Photos'}", status=200, mimetype="application/json")
@@ -257,7 +256,7 @@ class RefreshToken(threading.Thread):
 
     def run(self):
         while True:
-            logging.info("Getting new access token using refresh token: " + self.database['refresh_token'])
+            logging.debug("Getting new access token using refresh token: " + self.database['refresh_token'])
             refresh_token = self.database['refresh_token']
 
             # use the refresh token to get a new access token
@@ -270,7 +269,8 @@ class RefreshToken(threading.Thread):
                               })
             token_resp = r.json()
             access_token = token_resp['access_token']
-            logging.info("New access token obtained: " + access_token)
+            logging.info("[RefreshToken] New access token obtained")
+            logging.debug(access_token)
             # Save access token
             save_access_token(access_token, refresh_token)
 
@@ -285,6 +285,10 @@ def start_backup():
 
     # Get the database!
     db = get_database()
+
+    # DEBUG: Remove file from db
+    # db['uploaded'].remove("2020-01-18 13-59-57 MGAF5-100-42408585_5JX18875B0530.mp4")
+    # db['downloaded'].remove("2020-01-18 13-59-57 MGAF5-100-42408585_5JX18875B0530.mp4")
 
     # Start getting new refresh tokens every 10 mins
     rt = RefreshToken(db)
