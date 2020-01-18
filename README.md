@@ -1,4 +1,4 @@
-# Security Camera Backup
+# Smart Camera Backup
 
 Unlimited backup for your security camera footage! On the cloud :)
 
@@ -16,8 +16,8 @@ Installation will take 5-10 minutes. Please read the instructions very carefully
 
 #### Step 1: Cloning
 ```
-git clone https://github.com/mog3n/SecurityCameraBackup
-cd SecurityCameraBackup
+git clone https://github.com/mog3n/SmartCameraBackup
+cd SmartCameraBackup
 ```
 #### Step 2: Activating a virtual python environment
 ```

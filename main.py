@@ -67,8 +67,8 @@ class SmartCameraBackup(threading.Thread):
                     # Save to file
                     save_database(self.database)
 
-                logging.info("Done downloading all footage")
-                time.sleep(60)
+                # logging.info("Done downloading all footage. Napping for 1 min")
+                time.sleep(1)
 
             except Exception as e:
                 logging.error(e)
@@ -91,6 +91,7 @@ class GooglePhotosBackup(threading.Thread):
         self.upload_dir = os.path.join(os.getcwd(), "video")
         self.database = database
 
+    # Checks 'video' folder for new footage and uploads it to google photos
     def run(self):
         access_token = self.database['g_token']
 
@@ -100,6 +101,7 @@ class GooglePhotosBackup(threading.Thread):
         # print(resp)
 
         while True:
+
             # Get files in directory
             video_files = glob.glob(os.path.join(os.getcwd(), 'video', '*.mp4'))
             for video_file in video_files:
@@ -125,6 +127,7 @@ class GooglePhotosBackup(threading.Thread):
                     data=data,
                     headers=headers,
                 )
+
                 upload_token = r.content.decode('UTF-8')  # Used to create a media item
 
                 # create media item
@@ -147,11 +150,12 @@ class GooglePhotosBackup(threading.Thread):
                                   data=json.dumps(data),
                                   headers=headers,
                                   )
-                # Check for upload error
+                # Check for create media error
                 create_media_response = m.json()
-                if create_media_response['error']:
-                    logging.info("Error while trying to create media")
+                if "error" in create_media_response.keys():
+                    logging.error("Error while trying to create media")
                     logging.info(create_media_response)
+                    return
 
                 logging.info(filename + " uploaded")
                 # Add to database
@@ -160,10 +164,22 @@ class GooglePhotosBackup(threading.Thread):
                 save_database(self.database)
 
             # Finished uploading. Wait 1 minute
-            logging.info("Done uploading to Google Photos")
-            time.sleep(5)
+            # logging.info("Done uploading to Google Photos. Napping for 30 seconds. Power nap!")
+            time.sleep(2)
 
 
+class Status(threading.Thread):
+    def __init__(self, db):
+        threading.Thread.__init__(self)
+        self.database =db
+
+    def run(self):
+        while True:
+            logging.info("STATUS | Uploaded: " + str(len(self.database['uploaded'])) +
+                         " | Downloaded: " + str(len(self.database['downloaded'])))
+            time.sleep(10)
+
+# Saves the database file
 def save_database(db):
     db_file_path = os.path.join(os.getcwd(), "data.json")
     file = io.open(db_file_path, 'w', encoding='utf-8')
@@ -174,7 +190,7 @@ def save_database(db):
 
 # Gets the "database" file that keeps a record of all downloaded and uploaded video files
 def get_database():
-    database = {'uploaded': [], 'downloaded': [], 'g_token': ''}
+    database = {'uploaded': [], 'downloaded': [], 'g_token': '', 'code': ''}
     # Load database file
     db_file_path = os.path.join(os.getcwd(), "data.json")
     if os.path.exists(db_file_path):
@@ -191,6 +207,7 @@ def get_database():
     return database
 
 
+# Flask callback endpoint
 @app.route('/auth')
 def auth():
     error = request.args.get('error', '')
@@ -212,42 +229,92 @@ def auth():
                       })
 
     token = r.json()['access_token']
+    refresh_token = r.json()['refresh_token']
     logging.info('Token:'+token)
-    save_access_token(token)
+    save_access_token(token, refresh_token)
     logging.info("G Token obtained: " + token)
     # If all is good, then start backup.
     start_backup()
     return Response("{'message': 'Successfully logged into Google Photos'}", status=200, mimetype="application/json")
 
 
-def save_access_token(token):
+# Save access token to the data file
+def save_access_token(token, refresh_token):
     # Get database, append token
     d = get_database()
     d['g_token'] = token
+    d['refresh_token'] = refresh_token
     # Save to db
     db_file_path = os.path.join(os.getcwd(), "data.json")
     file = io.open(db_file_path, 'w')
     file.write(json.dumps(d))
     file.close()
 
+class RefreshToken(threading.Thread):
+    def __init__(self, db):
+        threading.Thread.__init__(self)
+        self.database = db
+
+    def run(self):
+        while True:
+            logging.info("Getting new access token using refresh token: " + self.database['refresh_token'])
+            refresh_token = self.database['refresh_token']
+
+            # use the refresh token to get a new access token
+            r = requests.post('https://oauth2.googleapis.com/token',
+                              {
+                                  'client_id': CLIENT_ID,
+                                  'client_secret': CLIENT_SECRET,
+                                  'refresh_token': refresh_token,
+                                  'grant_type': 'refresh_token'
+                              })
+            token_resp = r.json()
+            access_token = token_resp['access_token']
+            logging.info("New access token obtained: " + access_token)
+            # Save access token
+            save_access_token(access_token, refresh_token)
+
+            logging.info("[RefreshToken] Sleeping for 10 mins")
+            # Get a new access token every 10 minutes
+            time.sleep(60*10)
 
 # Starts backup to Google. This happens after token is obtained.
 def start_backup():
-    # Otherwise, start the app!
+    # Create video path
+    setup_video_folder()
+
+    # Get the database!
     db = get_database()
+
+    # Start getting new refresh tokens every 10 mins
+    rt = RefreshToken(db)
+    rt.start()
+
     # Start downloading Arlo footage
     smb = SmartCameraBackup(db)
     smb.start()
+
     # Start uploading to GCP
     gpb = GooglePhotosBackup(db)
     gpb.start()
 
+    # Start status monitoring
+    stats = Status(db)
+    stats.start()
+
 
 def main():
     # Open web browser to authenticate Google Photos API
-    url = G_URL + "?client_id=" + CLIENT_ID + "&redirect_uri="+REDIRECT_URI+"&scope="+SCOPE+"&response_type=code"
-    webbrowser.open(url, new=2)
-    app.run(port=42069)
+    url = G_URL + "?client_id=" + CLIENT_ID + "&access_type=offline&redirect_uri="+REDIRECT_URI+"&scope="+SCOPE+"&response_type=code"
+
+    # Check if a data json file already exists
+    file_path = os.path.join(os.getcwd(), "data.json")
+    if os.path.exists(file_path):
+        # Start the backup process if it already exists
+        start_backup()
+    else:
+        webbrowser.open(url, new=2)
+        app.run(port=42069)
 
 
 if __name__ == "__main__":
