@@ -32,7 +32,7 @@ class SmartCameraBackup(threading.Thread):
 
     def run(self):
         while True:
-            video_folder = setup_video_folder()  # creates "video" folder
+            video_folder, cache_folder = setup_video_folder()  # creates "video" folder
 
             try:
                 arlo = self.arlo
@@ -55,11 +55,24 @@ class SmartCameraBackup(threading.Thread):
                         logging.debug(video_file_name + " already downloaded")
                         continue
 
-                    # Download video
-                    with open(video_folder + '/' + video_file_name, 'wb') as f:
+                    # Download video to cache folder
+                    download_vid_path = os.path.join(cache_folder, video_file_name)
+                    with open(download_vid_path, 'wb') as f:
                         for chunk in stream:
                             f.write(chunk)
                         f.close()
+
+                    # When download is complete, move to video folder
+                    save_video_path = os.path.join(video_folder, video_file_name)
+                    vid = open(download_vid_path, 'rb')
+                    vid_data = vid.read()
+                    vid.close()
+
+                    new_file = open(save_video_path, 'wb')
+                    new_file.write(vid_data)
+                    new_file.close()
+                    # Remove cache file
+                    os.remove(download_vid_path)
 
                     logging.info('[SmartCameraBackup] Downloaded video ' + video_file_name + ' from ' + recording['createdDate'] + '.')
                     # Add to database
@@ -68,7 +81,7 @@ class SmartCameraBackup(threading.Thread):
                     save_database(self.database)
 
                 # logging.info("Done downloading all footage. Napping for 1 min")
-                time.sleep(1)
+                time.sleep(0.5)
 
             except Exception as e:
                 logging.error(e)
@@ -78,11 +91,14 @@ class SmartCameraBackup(threading.Thread):
 def setup_video_folder():
     # create directory for video footage
     path = os.path.join(os.getcwd(), 'video')
+    path_2 = os.path.join(os.getcwd(), 'cache')
     if not os.path.isdir(path):
         os.mkdir(path)
         logging.info("[setup_video_folder] Video path created")
-    return path
-
+    if not os.path.isdir(path_2):
+        os.mkdir(path_2)
+        logging.info("[setup_video_folder] Cache path created")
+    return path, path_2
 
 # Handles uploading footage to google photos
 class GooglePhotosBackup(threading.Thread):
@@ -93,7 +109,6 @@ class GooglePhotosBackup(threading.Thread):
 
     # Checks 'video' folder for new footage and uploads it to google photos
     def run(self):
-        access_token = self.database['g_token']
 
         # TEST TOKEN WORKS
         # r = requests.get('https://photoslibrary.googleapis.com/v1/albums?access_token='+access_token)
@@ -101,6 +116,7 @@ class GooglePhotosBackup(threading.Thread):
         # print(resp)
 
         while True:
+            access_token = self.database['g_token']
 
             # Get files in directory
             video_files = glob.glob(os.path.join(os.getcwd(), 'video', '*.mp4'))
@@ -163,9 +179,8 @@ class GooglePhotosBackup(threading.Thread):
                 # Save database
                 save_database(self.database)
 
-            # Finished uploading. Wait 1 minute
             # logging.info("Done uploading to Google Photos. Napping for 30 seconds. Power nap!")
-            time.sleep(2)
+            time.sleep(0.5)
 
 
 class Status(threading.Thread):
@@ -177,7 +192,7 @@ class Status(threading.Thread):
         while True:
             logging.info("[Status] Uploaded: " + str(len(self.database['uploaded'])) +
                          " | Downloaded: " + str(len(self.database['downloaded'])))
-            time.sleep(10)
+            time.sleep(60)
 
 # Saves the database file
 def save_database(db):
@@ -249,34 +264,40 @@ def save_access_token(token, refresh_token):
     file.write(json.dumps(d))
     file.close()
 
+
 class RefreshToken(threading.Thread):
     def __init__(self, db):
         threading.Thread.__init__(self)
         self.database = db
 
+        self.getAccessToken()  # run it synchronously once
+
+    def getAccessToken(self):
+        logging.debug("Getting new access token using refresh token: " + self.database['refresh_token'])
+        refresh_token = self.database['refresh_token']
+
+        # use the refresh token to get a new access token
+        r = requests.post('https://oauth2.googleapis.com/token',
+                          {
+                              'client_id': CLIENT_ID,
+                              'client_secret': CLIENT_SECRET,
+                              'refresh_token': refresh_token,
+                              'grant_type': 'refresh_token'
+                          })
+        token_resp = r.json()
+        access_token = token_resp['access_token']
+        logging.info("[RefreshToken] New access token obtained")
+        logging.debug(access_token)
+        # Save access token
+        save_access_token(access_token, refresh_token)
+        logging.info("[RefreshToken] Sleeping for 10 mins")
+
     def run(self):
         while True:
-            logging.debug("Getting new access token using refresh token: " + self.database['refresh_token'])
-            refresh_token = self.database['refresh_token']
-
-            # use the refresh token to get a new access token
-            r = requests.post('https://oauth2.googleapis.com/token',
-                              {
-                                  'client_id': CLIENT_ID,
-                                  'client_secret': CLIENT_SECRET,
-                                  'refresh_token': refresh_token,
-                                  'grant_type': 'refresh_token'
-                              })
-            token_resp = r.json()
-            access_token = token_resp['access_token']
-            logging.info("[RefreshToken] New access token obtained")
-            logging.debug(access_token)
-            # Save access token
-            save_access_token(access_token, refresh_token)
-
-            logging.info("[RefreshToken] Sleeping for 10 mins")
             # Get a new access token every 10 minutes
+            self.getAccessToken()
             time.sleep(60*10)
+
 
 # Starts backup to Google. This happens after token is obtained.
 def start_backup():
@@ -287,8 +308,8 @@ def start_backup():
     db = get_database()
 
     # DEBUG: Remove file from db
-    # db['uploaded'].remove("2020-01-18 13-59-57 MGAF5-100-42408585_5JX18875B0530.mp4")
-    # db['downloaded'].remove("2020-01-18 13-59-57 MGAF5-100-42408585_5JX18875B0530.mp4")
+    # db['uploaded'].remove("2020-01-18 17-54-01 MGAF5-100-42408585_5JX18875B0530.mp4")
+    # db['downloaded'].remove("2020-01-18 17-54-01 MGAF5-100-42408585_5JX18875B0530.mp4")
 
     # Start getting new refresh tokens every 10 mins
     rt = RefreshToken(db)
