@@ -8,9 +8,6 @@ Utilizing Google Photo's unlimited cloud storage, SCB will simultaneously downlo
 ### What you'll need
 1. Google Cloud Platform Account
 2. Python 3.7
-3. 10 minutes of patience :)
-
-Installation will take 5-10 minutes. Please read the instructions very carefully!
 
 ## Installation
 
@@ -30,7 +27,11 @@ pip install -r requirements.txt
 You'll need this to access your Google Photos account.
 
 Go to: https://developers.google.com/photos/library/guides/get-started and click on "Enable the Google Photos API".
-Follow the instructions to create a Google Cloud account and enable the Photos API. At the end,
+Follow the instructions to create a Google Cloud account and enable the Photos API.
+
+You will be calling from a `web server` and using the redirect url `http://localhost:42069/auth`
+
+At the end,
 you'll be prompted with a `client id` and `client secret`.
 
 Once you have everything setup, you'll want to write down the `client id` and `client secret`.
@@ -38,7 +39,7 @@ Once you have everything setup, you'll want to write down the `client id` and `c
 #### Step 4: Configurating the app
 Under the file `credentials_example.py`, you'll want to fill in the `CLIENT_ID` and `CLIENT_SECRET` variables with the one you were given in Step 3.
 
-Additionally, fill in your Arlo's account info: `ARLO_USERNAME` and `ARLO_PASSWORD`.
+Fill in your Arlo's account info: `ARLO_USERNAME` and `ARLO_PASSWORD`.
 
 Then **rename** the file to credentials.py
 
