@@ -1,3 +1,5 @@
+![SmartCameraBackup](terminal_ss.png)
+
 # Smart Camera Backup
 
 Unlimited backup for your security camera footage! SCB downloads footage from your Arlo security camera and uploads them to Google Photos instantly, in real time!
