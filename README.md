@@ -1,9 +1,15 @@
 # Smart Camera Backup
 
-Unlimited backup for your security camera footage! On the cloud :)
+Unlimited backup for your security camera footage! SCB downloads footage from your Arlo security camera and uploads them to Google Photos instantly, in real time!
 
-### How does this work?
-Utilizing Google Photo's unlimited cloud storage, SCB will simultaneously download footage and upload them to your Google Photos account.
+## Features
+* Looks for new footage in real time
+* Asynchronous uploading/downloading of new video
+* OAuth2 support with auto-refreshing tokens for Google
+
+## Upcoming features
+* Automatically clean video folder when uploads are done
+* Integration with other security cameras (i.e. Nest)
 
 ### What you'll need
 1. Google Cloud Platform Account
